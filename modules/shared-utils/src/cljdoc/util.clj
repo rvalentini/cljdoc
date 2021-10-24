@@ -122,6 +122,21 @@
       #{:cljs} ["cljs"]
       ["clj" "cljs"])))
 
+(defn lookup-dynamic-filename
+  "For a given directory `dir` and a file name `static-filename`, walks the directory and
+  trys to find a dynamically generated file with a name that matches the `static-filename`
+  except for the dynamic hash part.
+  Note: this assumes that the hash is inserted at the end, right before the file type extension,
+  e.g. something.static.db58f58a.js"
+  [dir static-filename]
+  (let [[prefix suffix] (string/split static-filename #"\.(?!.*\.)")]
+    (->> (io/file dir)
+      (file-seq)
+      (map #(.getName %))
+      (filter #(.startsWith % prefix))
+      (filter #(.endsWith % suffix))
+      assert-first)))
+
 (defn pom-path [project]
   (format "META-INF/maven/%s/%s/pom.xml"
           (group-id project)

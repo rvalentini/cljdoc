@@ -82,7 +82,9 @@
   [:div.fixed.left-0.right-0.bottom-0.bg-washed-red.code.b--light-red.bw3.ba.dn
    {:id "no-js-warning"}
    [:script
-    (hiccup/raw "fetch(\"/js/index.js\").then(e => e.status === 200 ? null : document.getElementById('no-js-warning').classList.remove('dn'))")]
+    (hiccup/raw (format
+                 "fetch(\"/js/%s\").then(e => e.status === 200 ? null : document.getElementById('no-js-warning').classList.remove('dn'))"
+                 (util/lookup-dynamic-filename "resources-compiled/public/js/" "main.js")))]
    [:p.ph4 "Could not find JavaScript assets, please refer to " [:a.fw7.link {:href (util/github-url :running-locally)} "the documentation"] " for how to build JS assets."]])
 
 (defn head [opts]
@@ -158,10 +160,10 @@
                  [:a.db.link.black.mv1.pv3.tc.br2.pointer
                   {:href link, :style {:background-color "#ECF2FB"}}
                   description])
-               [["Keyboard shortcuts"  (routes/url-for :shortcuts)]
-                ["Report a problem"    (util/github-url :issues)]
-                ;; ["Recent improvements" "#"] TODO add link once it exists
-                ["cljdoc on GitHub"    (util/github-url :home)]]))
+               [["Keyboard shortcuts" (routes/url-for :shortcuts)]
+                ["Report a problem" (util/github-url :issues)]
+         ;; ["Recent improvements" "#"] TODO add link once it exists
+                ["cljdoc on GitHub" (util/github-url :home)]]))
     [:a#js--meta-close.link.black.fr.pointer
      "× close"]]])
 
