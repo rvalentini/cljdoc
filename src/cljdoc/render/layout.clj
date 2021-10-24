@@ -7,6 +7,8 @@
             [cljdoc.util.scm :as scm]
             [clojure.string :as string]
             [hiccup2.core :as hiccup]
+            [selmer.parser :as selmer]
+            [selmer.util :refer [without-escaping]]
             [hiccup.page]))
 
 (defn highlight-js-customization []
@@ -83,49 +85,54 @@
     (hiccup/raw "fetch(\"/js/index.js\").then(e => e.status === 200 ? null : document.getElementById('no-js-warning').classList.remove('dn'))")]
    [:p.ph4 "Could not find JavaScript assets, please refer to " [:a.fw7.link {:href (util/github-url :running-locally)} "the documentation"] " for how to build JS assets."]])
 
+(defn head [opts]
+  [[:title (:title opts)]
+   [:meta {:charset "utf-8"}]
+   [:meta {:content (:description opts) :name "description"}]
+
+   ;; Google / Search Engine Tags
+   [:meta {:content (:title opts) :itemprop "name"}]
+   [:meta {:content (:description opts) :itemprop "description"}]
+   [:meta {:content "https://cljdoc.org/cljdoc-logo-beta-square.png" :itemprop "image"}]
+
+   ;; OpenGraph Meta Tags (should work for Twitter/Facebook)
+   ;; TODO [:meta {:content "" :property "og:url"}]
+   [:meta {:content "website" :property "og:type"}]
+   [:meta {:content (:title opts) :property "og:title"}]
+   [:meta {:content (:description opts) :property "og:description"}]
+   ;; Disable image for now; doesn't add much and occupies a lot of space in Slack and similar
+   ;; [:meta {:content "https://cljdoc.org/cljdoc-logo-beta-square.png" :property "og:image"}]
+
+   ;; Canonical URL
+   (when-let [url (:canonical-url opts)]
+     (assert (.startsWith url "/"))
+     [:link {:rel "canonical" :href (str "https://cljdoc.org" url)}]) ; TODO read domain from config
+
+   ;; Open Search
+   [:link {:rel  "search" :type "application/opensearchdescription+xml"
+           :href "/opensearch.xml" :title "cljdoc"}]
+
+   [:meta {:name "viewport" :content "width=device-width, initial-scale=1"}]
+   (apply hiccup.page/include-css (assets/css :tachyons))
+   (hiccup.page/include-css "/cljdoc.css")])
+
+(defn body [opts contents]
+  [[:div.sans-serif
+    contents]
+   (when (not= :prod (config/profile))
+     (no-js-warning))
+   [:div#cljdoc-switcher]
+   (highlight-js)
+   (add-requested-features (:page-features opts))])
+
+(defn render-section [sec]
+  (apply str (for [tag sec] (hiccup/html {:mode :html} tag))))
+
 (defn page [opts contents]
-  (hiccup/html {:mode :html}
-               (hiccup.page/doctype :html5)
-               [:html {}
-                [:head
-                 [:title (:title opts)]
-                 [:meta {:charset "utf-8"}]
-                 [:meta {:content (:description opts) :name "description"}]
-
-                 ;; Google / Search Engine Tags
-                 [:meta {:content (:title opts) :itemprop "name"}]
-                 [:meta {:content (:description opts) :itemprop "description"}]
-                 [:meta {:content "https://cljdoc.org/cljdoc-logo-beta-square.png" :itemprop "image"}]
-
-                 ;; OpenGraph Meta Tags (should work for Twitter/Facebook)
-                 ;; TODO [:meta {:content "" :property "og:url"}]
-                 [:meta {:content "website" :property "og:type"}]
-                 [:meta {:content (:title opts) :property "og:title"}]
-                 [:meta {:content (:description opts) :property "og:description"}]
-                 ;; Disable image for now; doesn't add much and occupies a lot of space in Slack and similar
-                 ;; [:meta {:content "https://cljdoc.org/cljdoc-logo-beta-square.png" :property "og:image"}]
-
-                 ;; Canonical URL
-                 (when-let [url (:canonical-url opts)]
-                   (assert (.startsWith url "/"))
-                   [:link {:rel "canonical" :href (str "https://cljdoc.org" url)}]); TODO read domain from config
-
-                 ;; Open Search
-                 [:link {:rel "search" :type "application/opensearchdescription+xml"
-                         :href "/opensearch.xml" :title "cljdoc"}]
-
-                 [:meta {:name "viewport" :content "width=device-width, initial-scale=1"}]
-                 (apply hiccup.page/include-css (assets/css :tachyons))
-                 (hiccup.page/include-css "/cljdoc.css")]
-                [:body
-                 [:div.sans-serif
-                  contents]
-                 (when (not= :prod (config/profile))
-                   (no-js-warning))
-                 [:div#cljdoc-switcher]
-                 [:script {:src "/js/index.js"}]
-                 (highlight-js)
-                 (add-requested-features (:page-features opts))]]))
+  (without-escaping
+   (selmer/render-file "public/js/main.html"
+                       {:head (render-section (head opts))
+                        :body (render-section (body opts contents))})))
 
 (defn sidebar-title
   ([title]
