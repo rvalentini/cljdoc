@@ -45,7 +45,7 @@
 (defn store-artifact! [db-spec group-id artifact-id versions]
   (assert (coll? versions))
   (doseq [v versions]
-    (sql/execute! db-spec ["INSERT OR IGNORE INTO versions (group_id, artifact_id, name) VALUES (?, ?, ?)" group-id artifact-id v])))
+    (sql/execute! db-spec ["INSERT INTO versions (group_id, artifact_id, name) VALUES (?, ?, ?) ON CONFLICT DO NOTHING" group-id artifact-id v])))
 
 (defn- update-version-meta! [db-spec version-id data]
   (sql/execute! db-spec ["UPDATE versions SET meta = ? WHERE id = ?" (nippy/freeze data) version-id]))
@@ -189,9 +189,7 @@
 (defn- sql-exists?
   "A small helper to deal with the complex keys that sqlite returns for exists queries."
   [db-spec sqlvec]
-  (case (val (first (first (sql/query db-spec sqlvec))))
-    0 false
-    1 true))
+  (val (first (first (sql/query db-spec sqlvec))))) ;TODO postgres error here
 
 ;; API --------------------------------------------------------------------------
 
@@ -200,10 +198,10 @@
   ;; TODO use build_id / merge with releases table?
   ([db-spec group-id]
    {:pre [(string? group-id)]}
-   (sql/query db-spec ["select group_id, artifact_id, name from versions where group_id = ? and meta not null" group-id] {:row-fn version-row-fn}))
+   (sql/query db-spec ["select group_id, artifact_id, name from versions where group_id = ? and meta is not null" group-id] {:row-fn version-row-fn}))
   ([db-spec group-id artifact-id]
    {:pre [(string? group-id) (string? artifact-id)]}
-   (sql/query db-spec ["select group_id, artifact_id, name from versions where group_id = ? and artifact_id = ? and meta not null" group-id artifact-id] {:row-fn version-row-fn})))
+   (sql/query db-spec ["select group_id, artifact_id, name from versions where group_id = ? and artifact_id = ? and meta is not null" group-id artifact-id] {:row-fn version-row-fn})))
 
 (defnp latest-release-version [db-spec {:keys [group-id artifact-id]}]
   (->> (get-documented-versions db-spec group-id artifact-id)
@@ -216,7 +214,7 @@
   (sql/query db-spec ["select group_id, artifact_id, name from versions"] {:row-fn version-row-fn}))
 
 (defn docs-available? [db-spec group-id artifact-id version-name]
-  (or (sql-exists? db-spec ["select exists(select id from versions where group_id = ? and artifact_id = ? and name = ? and meta not null)"
+  (or (sql-exists? db-spec ["select exists(select id from versions where group_id = ? and artifact_id = ? and name = ? and meta is not null)"
                             group-id artifact-id version-name])
       ;; meta should always be set to at least {} but hasn't been set for a while.
       ;; this is a temporary fix for this that should get revisited when switching
