@@ -2,10 +2,11 @@
   (:require [clojure.java.jdbc :as sql]
             [cljdoc.util.telegram :as telegram]
             [taoensso.nippy :as nippy])
-  (:import (java.time Instant Duration)))
+  (:import (java.time Instant Duration))
+  (:import (java.sql Timestamp)))
 
 (defn- now []
-  (str (Instant/now)))
+  (Timestamp/from (Instant/now)))
 
 (defprotocol IBuildTracker
   (analysis-requested!
@@ -31,8 +32,7 @@
                        :artifact_id artifact-id
                        :version version
                        :analysis_requested_ts (now)})
-         (first)
-         ((keyword "last_insert_rowid()"))))
+      ((comp :id first))))
   (analysis-kicked-off! [_ build-id analysis-job-uri analyzer-version]
     (sql/update! db-spec
                  "builds"
@@ -73,9 +73,7 @@
     (first (sql/query db-spec ["SELECT * FROM builds WHERE id = ?" build-id])))
   (recent-builds [_ days]
     (sql/query db-spec [(str "SELECT * FROM builds "
-                             "WHERE analysis_triggered_ts "
-                             "BETWEEN DATETIME('now', 'localtime', ?) "
-                             "AND DATETIME('now', 'localtime', '+1 days') "
+                             "WHERE NOW() - analysis_triggered_ts <= interval '24 hours'"
                              "ORDER BY id DESC")
                         (str "-" days " days")]))
   (running-build [_ group-id artifact-id version]
@@ -87,11 +85,11 @@
                               ;; in practice it happens that some webhooks don't reach
                               ;; the cljdoc api and builds end up in some sort of limbo
                               ;; where neither an error nor completion has occurred
-                              "and datetime(analysis_requested_ts) > datetime(?) "
+                              "and analysis_requested_ts > ? "
                               "order by id desc "
                               "limit 1")
                          group-id artifact-id version
-                         (str (.minus (Instant/now) (Duration/ofMinutes 10)))])))
+                         (Timestamp/from (.minus (Instant/now) (Duration/ofMinutes 10)))])))
   (last-build [_ group-id artifact-id version]
     (first
      (sql/query db-spec [(str "select * from builds where "

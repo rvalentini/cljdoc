@@ -301,6 +301,7 @@
    {:name ::build-show
     :enter (fn build-show-render [ctx]
              (if-let [build-info (->> ctx :request :path-params :id
+                                      (Integer/parseInt)
                                       (build-log/get-build build-tracker))]
                (pu/ok ctx build-info)
                ;; Not setting :response implies 404 response

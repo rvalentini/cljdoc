@@ -38,6 +38,8 @@
      {:cljdoc/tea-time        {}
       :cljdoc/sqlite          {:db-spec (cfg/db env-config)
                                :dir     (cfg/data-dir env-config)}
+      :cljdoc/postgres        {:db-spec (cfg/postgres-db env-config)}
+
       :cljdoc/cache           (merge (cfg/cache env-config)
                                      {:cache-dir      (cfg/data-dir env-config)
                                       :key-prefix     "get-pom-xml"
@@ -52,8 +54,8 @@
                         :storage          (ig/ref :cljdoc/storage)
                         :cache            (ig/ref :cljdoc/cache)
                         :searcher         (ig/ref :cljdoc/searcher)}
-      :cljdoc/storage       {:db-spec (ig/ref :cljdoc/sqlite)}
-      :cljdoc/build-tracker {:db-spec (ig/ref :cljdoc/sqlite)}
+      :cljdoc/storage       {:db-spec (ig/ref :cljdoc/postgres)}
+      :cljdoc/build-tracker {:db-spec (ig/ref :cljdoc/postgres)}
       :cljdoc/analysis-service {:service-type ana-service
                                 :opts (merge
                                        {:repos (->> (cfg/maven-repositories)
@@ -61,11 +63,11 @@
                                                     (into {}))}
                                        (when (= ana-service :circle-ci)
                                          (cfg/circle-ci env-config)))}
-      :cljdoc/clojars-stats   {:db-spec (ig/ref :cljdoc/sqlite)
+      :cljdoc/clojars-stats   {:db-spec (ig/ref :cljdoc/sqlite) ;TODO move to Postgres
                                :retention-days 380}}
 
      (when (cfg/enable-release-monitor? env-config)
-       {:cljdoc/release-monitor {:db-spec  (ig/ref :cljdoc/sqlite)
+       {:cljdoc/release-monitor {:db-spec  (ig/ref :cljdoc/sqlite) ;TODO move to Postgres
                                  :dry-run? (not (cfg/autobuild-clojars-releases? env-config))
                                  :searcher (ig/ref :cljdoc/searcher)}}))))
 
@@ -90,6 +92,15 @@
 (defmethod ig/init-key :cljdoc/build-tracker [k {:keys [db-spec]}]
   (log/info "Starting" k)
   (build-log/->SQLBuildTracker db-spec))
+
+;TODO avoid duplication with :cljdoc/sqlite
+(defmethod ig/init-key :cljdoc/postgres [_ {:keys [db-spec]}]
+  (ragtime/migrate-all (jdbc/sql-database db-spec)
+    {}
+    (jdbc/load-resources "postgres_migrations")
+    {:reporter (fn [_store direction migration]
+                 (log/infof "Migrating %s %s" direction migration))})
+  db-spec)
 
 (defmethod ig/init-key :cljdoc/sqlite [_ {:keys [db-spec dir]}]
   (.mkdirs (io/file dir))
@@ -122,20 +133,22 @@
     (integrant.repl/set-prep! #(system-config (cfg/config)))
     (integrant.repl/go))
 
+
   ;;playground for postgres ragtime migration
-  (require '[ragtime.repl :as r])
-  (def pg-db {:dbtype "postgresql"
-              :dbname "cljdoc"
-              :host "localhost"
-              :user "postgres"
-              :password "pass"
-              :ssl false ;TODO switch to true
-              :sslfactory "org.postgresql.ssl.NonValidatingFactory"})
-  (def config {:datastore  (ragtime.jdbc/sql-database pg-db)
-               :migrations (ragtime.jdbc/load-resources "postgres_migrations")})
+  (do
+    (require '[ragtime.repl :as r])
+    (def pg-db {:dbtype     "postgresql"
+                :dbname     "cljdoc"
+                :host       "localhost"
+                :user       "postgres"
+                :password   "pass"
+                :ssl        false                           ;TODO switch to true
+                :sslfactory "org.postgresql.ssl.NonValidatingFactory"})
+    (def config {:datastore  (ragtime.jdbc/sql-database pg-db)
+                 :migrations (ragtime.jdbc/load-resources "postgres_migrations")}))
 
   (r/migrate config)
-  (r/rollback config)
+  (r/rollback config 5)
 
   (require '[integrant.repl]
            '[clojure.spec.test.alpha :as st])
